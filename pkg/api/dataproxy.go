@@ -1,107 +1,59 @@
 package api
 
 import (
-	"crypto/tls"
-	"net"
-	"net/http"
-	"net/http/httputil"
-	"net/url"
+	"fmt"
 	"time"
 
-	"github.com/grafana/grafana/pkg/api/cloudwatch"
+	"github.com/grafana/grafana/pkg/api/pluginproxy"
 	"github.com/grafana/grafana/pkg/bus"
-	"github.com/grafana/grafana/pkg/middleware"
+	"github.com/grafana/grafana/pkg/metrics"
 	m "github.com/grafana/grafana/pkg/models"
-	"github.com/grafana/grafana/pkg/setting"
-	"github.com/grafana/grafana/pkg/util"
+	"github.com/grafana/grafana/pkg/plugins"
 )
 
-var dataProxyTransport = &http.Transport{
-	TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	Proxy:           http.ProxyFromEnvironment,
-	Dial: (&net.Dialer{
-		Timeout:   30 * time.Second,
-		KeepAlive: 30 * time.Second,
-	}).Dial,
-	TLSHandshakeTimeout: 10 * time.Second,
-}
+const HeaderNameNoBackendCache = "X-Grafana-NoCache"
 
-func NewReverseProxy(ds *m.DataSource, proxyPath string, targetUrl *url.URL) *httputil.ReverseProxy {
-	director := func(req *http.Request) {
-		req.URL.Scheme = targetUrl.Scheme
-		req.URL.Host = targetUrl.Host
-		req.Host = targetUrl.Host
+func (hs *HTTPServer) getDatasourceByID(id int64, orgID int64, nocache bool) (*m.DataSource, error) {
+	cacheKey := fmt.Sprintf("ds-%d", id)
 
-		reqQueryVals := req.URL.Query()
-
-		if ds.Type == m.DS_INFLUXDB_08 {
-			req.URL.Path = util.JoinUrlFragments(targetUrl.Path, "db/"+ds.Database+"/"+proxyPath)
-			reqQueryVals.Add("u", ds.User)
-			reqQueryVals.Add("p", ds.Password)
-			req.URL.RawQuery = reqQueryVals.Encode()
-		} else if ds.Type == m.DS_INFLUXDB {
-			req.URL.Path = util.JoinUrlFragments(targetUrl.Path, proxyPath)
-			reqQueryVals.Add("db", ds.Database)
-			req.URL.RawQuery = reqQueryVals.Encode()
-			if !ds.BasicAuth {
-				req.Header.Del("Authorization")
-				req.Header.Add("Authorization", util.GetBasicAuthHeader(ds.User, ds.Password))
+	if !nocache {
+		if cached, found := hs.cache.Get(cacheKey); found {
+			ds := cached.(*m.DataSource)
+			if ds.OrgId == orgID {
+				return ds, nil
 			}
-		} else {
-			req.URL.Path = util.JoinUrlFragments(targetUrl.Path, proxyPath)
 		}
-
-		if ds.BasicAuth {
-			req.Header.Del("Authorization")
-			req.Header.Add("Authorization", util.GetBasicAuthHeader(ds.BasicAuthUser, ds.BasicAuthPassword))
-		}
-
-		// clear cookie headers
-		req.Header.Del("Cookie")
-		req.Header.Del("Set-Cookie")
 	}
 
-	return &httputil.ReverseProxy{Director: director}
-}
-
-var dsMap map[int64]*m.DataSource = make(map[int64]*m.DataSource)
-
-func getDatasource(id int64, orgId int64) (*m.DataSource, error) {
-	// ds, exists := dsMap[id]
-	// if exists && ds.OrgId == orgId {
-	// 	return ds, nil
-	// }
-
-	query := m.GetDataSourceByIdQuery{Id: id, OrgId: orgId}
+	query := m.GetDataSourceByIdQuery{Id: id, OrgId: orgID}
 	if err := bus.Dispatch(&query); err != nil {
 		return nil, err
 	}
 
-	dsMap[id] = &query.Result
-	return &query.Result, nil
+	hs.cache.Set(cacheKey, query.Result, time.Second*5)
+	return query.Result, nil
 }
 
-func ProxyDataSourceRequest(c *middleware.Context) {
-	ds, err := getDatasource(c.ParamsInt64(":id"), c.OrgId)
+func (hs *HTTPServer) ProxyDataSourceRequest(c *m.ReqContext) {
+	c.TimeRequest(metrics.M_DataSource_ProxyReq_Timer)
+
+	nocache := c.Req.Header.Get(HeaderNameNoBackendCache) == "true"
+
+	ds, err := hs.getDatasourceByID(c.ParamsInt64(":id"), c.OrgId, nocache)
+
 	if err != nil {
 		c.JsonApiErr(500, "Unable to load datasource meta data", err)
 		return
 	}
 
-	targetUrl, _ := url.Parse(ds.Url)
-	if len(setting.DataProxyWhiteList) > 0 {
-		if _, exists := setting.DataProxyWhiteList[targetUrl.Host]; !exists {
-			c.JsonApiErr(403, "Data proxy hostname and ip are not included in whitelist", nil)
-			return
-		}
+	// find plugin
+	plugin, ok := plugins.DataSources[ds.Type]
+	if !ok {
+		c.JsonApiErr(500, "Unable to find datasource plugin", err)
+		return
 	}
 
-	if ds.Type == m.DS_CLOUDWATCH {
-		cloudwatch.HandleRequest(c)
-	} else {
-		proxyPath := c.Params("*")
-		proxy := NewReverseProxy(ds, proxyPath, targetUrl)
-		proxy.Transport = dataProxyTransport
-		proxy.ServeHTTP(c.RW(), c.Req.Request)
-	}
+	proxyPath := c.Params("*")
+	proxy := pluginproxy.NewDataSourceProxy(ds, plugin, c, proxyPath)
+	proxy.HandleRequest()
 }

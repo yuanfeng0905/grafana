@@ -1,12 +1,13 @@
 {
-  "pluginType": "datasource",
-  "name": "Mixed datasource",
+  "type": "datasource",
+  "name": "-- Mixed --",
+  "id": "mixed",
+
   "builtIn": true,
   "mixed": true,
+  "metrics": true,
 
-  "type": "mixed",
-  "serviceName": "MixedDatasource",
-
-  "module": "app/plugins/datasource/mixed/datasource",
-  "metrics": true
+  "queryOptions": {
+    "minInterval": true
+  }
 }

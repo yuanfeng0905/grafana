@@ -9,10 +9,15 @@ type UrlQueryReader struct {
 	values url.Values
 }
 
-func NewUrlQueryReader(url *url.URL) *UrlQueryReader {
-	return &UrlQueryReader{
-		values: url.Query(),
+func NewUrlQueryReader(urlInfo *url.URL) (*UrlQueryReader, error) {
+	u, err := url.ParseQuery(urlInfo.String())
+	if err != nil {
+		return nil, err
 	}
+
+	return &UrlQueryReader{
+		values: u,
+	}, nil
 }
 
 func (r *UrlQueryReader) Get(name string, def string) string {
@@ -27,6 +32,11 @@ func (r *UrlQueryReader) Get(name string, def string) string {
 func JoinUrlFragments(a, b string) string {
 	aslash := strings.HasSuffix(a, "/")
 	bslash := strings.HasPrefix(b, "/")
+
+	if len(b) == 0 {
+		return a
+	}
+
 	switch {
 	case aslash && bslash:
 		return a + b[1:]

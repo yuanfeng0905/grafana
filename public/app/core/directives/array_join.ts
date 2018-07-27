@@ -1,8 +1,5 @@
-///<reference path="../../headers/common.d.ts" />
-
-import angular = require('angular');
-import _ = require('lodash');
-import coreModule = require('../core_module');
+import _ from 'lodash';
+import coreModule from '../core_module';
 
 export function arrayJoin() {
   'use strict';
@@ -11,7 +8,6 @@ export function arrayJoin() {
     restrict: 'A',
     require: 'ngModel',
     link: function(scope, element, attr, ngModel) {
-
       function split_array(text) {
         return (text || '').split(',');
       }
@@ -26,9 +22,8 @@ export function arrayJoin() {
 
       ngModel.$parsers.push(split_array);
       ngModel.$formatters.push(join_array);
-    }
+    },
   };
 }
 
 coreModule.directive('arrayJoin', arrayJoin);
-

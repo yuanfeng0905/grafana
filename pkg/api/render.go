@@ -3,44 +3,74 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"runtime"
+	"strconv"
+	"strings"
+	"time"
 
-	"github.com/grafana/grafana/pkg/components/renderer"
-	"github.com/grafana/grafana/pkg/middleware"
-	"github.com/grafana/grafana/pkg/setting"
+	m "github.com/grafana/grafana/pkg/models"
+	"github.com/grafana/grafana/pkg/services/rendering"
 	"github.com/grafana/grafana/pkg/util"
 )
 
-func RenderToPng(c *middleware.Context) {
-	queryReader := util.NewUrlQueryReader(c.Req.URL)
+func (hs *HTTPServer) RenderToPng(c *m.ReqContext) {
+	queryReader, err := util.NewUrlQueryReader(c.Req.URL)
+	if err != nil {
+		c.Handle(400, "Render parameters error", err)
+		return
+	}
+
 	queryParams := fmt.Sprintf("?%s", c.Req.URL.RawQuery)
-	sessionId := c.Session.ID()
 
-	// Handle api calls authenticated without session
-	if sessionId == "" && c.ApiKeyId != 0 {
-		c.Session.Start(c)
-		c.Session.Set(middleware.SESS_KEY_APIKEY, c.ApiKeyId)
-		// release will make sure the new session is persisted before
-		// we spin up phantomjs
-		c.Session.Release()
-		// cleanup session after render is complete
-		defer func() { c.Session.Destory(c) }()
+	width, err := strconv.Atoi(queryReader.Get("width", "800"))
+	if err != nil {
+		c.Handle(400, "Render parameters error", fmt.Errorf("Cannot parse width as int: %s", err))
+		return
 	}
 
-	renderOpts := &renderer.RenderOpts{
-		Url:       c.Params("*") + queryParams,
-		Width:     queryReader.Get("width", "800"),
-		Height:    queryReader.Get("height", "400"),
-		SessionId: c.Session.ID(),
+	height, err := strconv.Atoi(queryReader.Get("height", "400"))
+	if err != nil {
+		c.Handle(400, "Render parameters error", fmt.Errorf("Cannot parse height as int: %s", err))
+		return
 	}
 
-	renderOpts.Url = setting.ToAbsUrl(renderOpts.Url)
-	pngPath, err := renderer.RenderToPng(renderOpts)
+	timeout, err := strconv.Atoi(queryReader.Get("timeout", "60"))
+	if err != nil {
+		c.Handle(400, "Render parameters error", fmt.Errorf("Cannot parse timeout as int: %s", err))
+		return
+	}
+
+	result, err := hs.RenderService.Render(c.Req.Context(), rendering.Opts{
+		Width:    width,
+		Height:   height,
+		Timeout:  time.Duration(timeout) * time.Second,
+		OrgId:    c.OrgId,
+		UserId:   c.UserId,
+		OrgRole:  c.OrgRole,
+		Path:     c.Params("*") + queryParams,
+		Timezone: queryReader.Get("tz", ""),
+		Encoding: queryReader.Get("encoding", ""),
+	})
+
+	if err != nil && err == rendering.ErrTimeout {
+		c.Handle(500, err.Error(), err)
+		return
+	}
+
+	if err != nil && err == rendering.ErrPhantomJSNotInstalled {
+		if strings.HasPrefix(runtime.GOARCH, "arm") {
+			c.Handle(500, "Rendering failed - PhantomJS isn't included in arm build per default", err)
+		} else {
+			c.Handle(500, "Rendering failed - PhantomJS isn't installed correctly", err)
+		}
+		return
+	}
 
 	if err != nil {
-		c.Handle(500, "Failed to render to png", err)
+		c.Handle(500, "Rendering failed.", err)
 		return
 	}
 
 	c.Resp.Header().Set("Content-Type", "image/png")
-	http.ServeFile(c.Resp, c.Req.Request, pngPath)
+	http.ServeFile(c.Resp, c.Req.Request, result.FilePath)
 }

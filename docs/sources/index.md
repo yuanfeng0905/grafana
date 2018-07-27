@@ -1,39 +1,107 @@
-page_title: About Grafana
-page_description: Introduction to Grafana.
-page_keywords: grafana, introduction, documentation, about
++++
+title = "Grafana documentation"
+description = "Guides, Installation & Feature Documentation"
+keywords = ["grafana", "installation", "documentation"]
+type = "docs"
+aliases = ["v1.1", "guides/reference/admin"]
++++
 
-# About Grafana
+# Grafana Documentation
 
-Grafana is a leading open source application for visualizing large-scale measurement data.
+<h2>Installing Grafana</h2>
+<div class="nav-cards">
+    <a href="{{< relref "installation/debian.md" >}}" class="nav-cards__item nav-cards__item--install">
+        <div class="nav-cards__icon fa fa-linux">
+        </div>
+        <h5>Installing on Linux</h5>
+    </a>
+    <a href="{{< relref "installation/mac.md" >}}" class="nav-cards__item nav-cards__item--install">
+        <div class="nav-cards__icon fa fa-apple">
+        </div>
+        <h5>Installing on Mac OS X</h5>
+    </a>
+      <a href="{{< relref "installation/windows.md" >}}" class="nav-cards__item nav-cards__item--install">
+        <div class="nav-cards__icon fa fa-windows">
+        </div>
+        <h5>Installing on Windows</h5>
+    </a>
+    <a href="https://grafana.com/cloud/grafana" class="nav-cards__item nav-cards__item--install">
+        <div class="nav-cards__icon fa fa-cloud">
+        </div>
+        <h5>Grafana Cloud</h5>
+    </a>
+    <a href="https://grafana.com/grafana/download" class="nav-cards__item nav-cards__item--install">
+        <div class="nav-cards__icon fa fa-moon-o">
+        </div>
+        <h5>Nightly Builds</h5>
+    </a>
+    <div class="nav-cards__item nav-cards__item--install">
+        <h5>For other platforms Read the <a href="{{< relref "project/building_from_source.md" >}}">build from source</a>
+        instructions for more information.</h5>
+    </div>
+</div>
 
-It provides a powerful and elegant way to create, share, and explore data and dashboards from your disparate metric databases, either with your team or the world.
+<h2>Guides</h2>
 
-Grafana is most commonly used for Internet infrastructure and application analytics, but many use it in other domains including industrial sensors, home automation, weather, and process control.
+<div class="nav-cards">
+    <a href="https://grafana.com/grafana" class="nav-cards__item nav-cards__item--guide">
+        <h4>What is Grafana?</h4>
+        <p>Grafana feature highlights.</p>
+    </a>
+    <a href="{{< relref "installation/configuration.md" >}}" class="nav-cards__item nav-cards__item--guide">
+        <h4>Configure Grafana</h4>
+        <p>Article on all the Grafana configuration and setup options.</p>
+    </a>
+    <a href="{{< relref "guides/getting_started.md" >}}" class="nav-cards__item nav-cards__item--guide">
+        <h4>Getting Started</h4>
+        <p>A guide that walks you through the basics of using Grafana</p>
+    </a>
+    <a href="{{< relref "administration/provisioning.md" >}}" class="nav-cards__item nav-cards__item--guide">
+        <h4>Provisioning</h4>
+        <p>A guide to help you automate your Grafana setup & configuration.</p>
+    </a>
+    <a href="{{< relref "guides/whats-new-in-v5-2.md" >}}" class="nav-cards__item nav-cards__item--guide">
+        <h4>What's new in v5.2</h4>
+        <p>Article on all the new cool features and enhancements in v5.2</p>
+    </a>
+    <a href="{{< relref "tutorials/screencasts.md" >}}" class="nav-cards__item nav-cards__item--guide">
+        <h4>Screencasts</h4>
+        <p>Video tutorials & guides</p>
+    </a>
+</div>
 
-Grafana features pluggable panels and data sources allowing easy extensibility. There is currently rich support for [Graphite](http://graphite.readthedocs.org/en/latest/), [InfluxDB](http://influxdb.org) and [OpenTSDB](http://opentsdb.net). There is also experimental support for [KairosDB](https://github.com/kairosdb/kairosdb), [Prometheus](http://prometheus.io/), and SQL is on the roadmap. Grafana has a variety of panels, including a fully featured graph panel with rich visualization options.
-
-Version 2.0 was released in April 2015: Grafana now ships with its own backend server that brings [many changes and features](../guides/whats-new-in-v2/).    
-Version 2.1 was released in July 2015 and added [even more features and enhancements](../guides/whats-new-in-v2-1/).
-
-## Community Resources, Feedback, and Support
-
-Thousands of organizations large and small rely on Grafana, and we have a vibrant and active community that constantly inspires us.
-
-Please don't hesitate to [open a new issue on Github](https://github.com/grafana/grafana/issues) with your suggestions, ideas, and bug reports.
-
-Most of the new features and improvements that go into Grafana come from our users. We greatly value your feedback and suggestions; we consider them paramount to making the product better!
-
-If you have any trouble with Grafana, whether you can't get it set up or you just want clarification on a feature, there are a number of ways to get help:
-
-- [Troubleshooting guide](/installation/troubleshooting/)
-- \#grafana IRC channel on the freenode network (chat.freenode.net)
-- Search closed and open [issues on GitHub](https://github.com/grafana/grafana/issues)
-- [Mailing list](https://groups.io/org/groupsio/grafana)
-
-## Commercial Support
-
-[raintank](http://www.raintank.io), the company behind Grafana, will be launching a SaaS Grafana-based platform later this year that will also include commercial support for all your existing Grafana installations. Please sign up for [early access at raintank](http://www.raintank.io) for more information.
-
-## License
-
-By utilizing this software, you agree to the terms of the included license. Grafana is licensed under the Apache 2.0 agreement. See [LICENSE](https://github.com/grafana/grafana/blob/master/LICENSE.md) for the full license terms.
+<h2>Data Source Guides</h2>
+<div class="nav-cards">
+    <a href="{{< relref "features/datasources/graphite.md" >}}" class="nav-cards__item nav-cards__item--ds">
+      <img src="/img/docs/logos/icon_graphite.svg" >
+      <h5>Graphite</h5>
+    </a>
+    <a href="{{< relref "features/datasources/elasticsearch.md" >}}" class="nav-cards__item nav-cards__item--ds">
+      <img src="/img/docs/logos/icon_elasticsearch.svg" >
+      <h5>Elasticsearch</h5>
+    </a>
+    <a href="{{< relref "features/datasources/influxdb.md" >}}" class="nav-cards__item nav-cards__item--ds">
+      <img src="/img/docs/logos/icon_influxdb.svg" >
+      <h5>InfluxDB</h5>
+    </a>
+    <a href="{{< relref "features/datasources/prometheus.md" >}}" class="nav-cards__item nav-cards__item--ds">
+      <img src="/img/docs/logos/icon_prometheus.svg" >
+      <h5>Prometheus</h5>
+    </a>
+    <a href="{{< relref "features/datasources/opentsdb.md" >}}" class="nav-cards__item nav-cards__item--ds">
+      <img src="/img/docs/logos/icon_opentsdb.png" >
+      <h5>OpenTSDB</h5>
+    </a>
+    <a href="{{< relref "features/datasources/mysql.md" >}}" class="nav-cards__item nav-cards__item--ds">
+      <img src="/img/docs/logos/icon_mysql.png" >
+      <h5>MySQL</h5>
+    </a>
+    <a href="{{< relref "features/datasources/postgres.md" >}}" class="nav-cards__item nav-cards__item--ds">
+      <img src="/img/docs/logos/icon_postgres.svg" >
+      <h5>Postgres</h5>
+    </a>
+    <a href="{{< relref "features/datasources/cloudwatch.md" >}}" class="nav-cards__item nav-cards__item--ds">
+      <img src="/img/docs/logos/icon_cloudwatch.svg">
+      <h5>Cloudwatch</h5>
+    </a>
+</div>

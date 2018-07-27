@@ -1,23 +1,36 @@
 package plugins
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
+	"strings"
+	"time"
 
 	"github.com/grafana/grafana/pkg/log"
+	"github.com/grafana/grafana/pkg/registry"
 	"github.com/grafana/grafana/pkg/setting"
+	"github.com/grafana/grafana/pkg/util"
 )
 
-type PluginMeta struct {
-	Type string `json:"type"`
-	Name string `json:"name"`
-}
-
 var (
-	DataSources map[string]interface{}
+	DataSources  map[string]*DataSourcePlugin
+	Panels       map[string]*PanelPlugin
+	StaticRoutes []*PluginStaticRoute
+	Apps         map[string]*AppPlugin
+	Plugins      map[string]*PluginBase
+	PluginTypes  map[string]interface{}
+	Renderer     *RendererPlugin
+
+	GrafanaLatestVersion string
+	GrafanaHasUpdate     bool
+	plog                 log.Logger
 )
 
 type PluginScanner struct {
@@ -25,18 +38,122 @@ type PluginScanner struct {
 	errors     []error
 }
 
-func Init() {
+type PluginManager struct {
+	log log.Logger
+}
+
+func init() {
+	registry.RegisterService(&PluginManager{})
+}
+
+func (pm *PluginManager) Init() error {
+	pm.log = log.New("plugins")
+	plog = log.New("plugins")
+
+	DataSources = map[string]*DataSourcePlugin{}
+	StaticRoutes = []*PluginStaticRoute{}
+	Panels = map[string]*PanelPlugin{}
+	Apps = map[string]*AppPlugin{}
+	Plugins = map[string]*PluginBase{}
+	PluginTypes = map[string]interface{}{
+		"panel":      PanelPlugin{},
+		"datasource": DataSourcePlugin{},
+		"app":        AppPlugin{},
+		"renderer":   RendererPlugin{},
+	}
+
+	pm.log.Info("Starting plugin search")
 	scan(path.Join(setting.StaticRootPath, "app/plugins"))
+
+	// check if plugins dir exists
+	if _, err := os.Stat(setting.PluginsPath); os.IsNotExist(err) {
+		if err = os.MkdirAll(setting.PluginsPath, os.ModePerm); err != nil {
+			plog.Error("Failed to create plugin dir", "dir", setting.PluginsPath, "error", err)
+		} else {
+			plog.Info("Plugin dir created", "dir", setting.PluginsPath)
+			scan(setting.PluginsPath)
+		}
+	} else {
+		scan(setting.PluginsPath)
+	}
+
+	// check plugin paths defined in config
+	checkPluginPaths()
+
+	for _, panel := range Panels {
+		panel.initFrontendPlugin()
+	}
+
+	for _, ds := range DataSources {
+		ds.initFrontendPlugin()
+	}
+
+	for _, app := range Apps {
+		app.initApp()
+	}
+
+	return nil
+}
+
+func (pm *PluginManager) startBackendPlugins(ctx context.Context) error {
+	for _, ds := range DataSources {
+		if ds.Backend {
+			if err := ds.startBackendPlugin(ctx, plog); err != nil {
+				pm.log.Error("Failed to init plugin.", "error", err, "plugin", ds.Id)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (pm *PluginManager) Run(ctx context.Context) error {
+	pm.startBackendPlugins(ctx)
+	pm.updateAppDashboards()
+	pm.checkForUpdates()
+
+	ticker := time.NewTicker(time.Minute * 10)
+	run := true
+
+	for run {
+		select {
+		case <-ticker.C:
+			pm.checkForUpdates()
+		case <-ctx.Done():
+			run = false
+			break
+		}
+	}
+
+	// kil backend plugins
+	for _, p := range DataSources {
+		p.Kill()
+	}
+
+	return ctx.Err()
+}
+
+func checkPluginPaths() error {
+	for _, section := range setting.Raw.Sections() {
+		if strings.HasPrefix(section.Name(), "plugin.") {
+			path := section.Key("path").String()
+			if path != "" {
+				scan(path)
+			}
+		}
+	}
+	return nil
 }
 
 func scan(pluginDir string) error {
-	DataSources = make(map[string]interface{})
-
 	scanner := &PluginScanner{
 		pluginPath: pluginDir,
 	}
 
-	if err := filepath.Walk(pluginDir, scanner.walker); err != nil {
+	if err := util.Walk(pluginDir, true, true, scanner.walker); err != nil {
+		if pluginDir != "data/plugins" {
+			log.Warn("Could not scan dir \"%v\" error: %s", pluginDir, err)
+		}
 		return err
 	}
 
@@ -47,9 +164,13 @@ func scan(pluginDir string) error {
 	return nil
 }
 
-func (scanner *PluginScanner) walker(path string, f os.FileInfo, err error) error {
+func (scanner *PluginScanner) walker(currentPath string, f os.FileInfo, err error) error {
 	if err != nil {
 		return err
+	}
+
+	if f.Name() == "node_modules" {
+		return util.WalkSkipDir
 	}
 
 	if f.IsDir() {
@@ -57,17 +178,18 @@ func (scanner *PluginScanner) walker(path string, f os.FileInfo, err error) erro
 	}
 
 	if f.Name() == "plugin.json" {
-		err := scanner.loadPluginJson(path)
+		err := scanner.loadPluginJson(currentPath)
 		if err != nil {
-			log.Error(3, "Failed to load plugin json file: %v,  err: %v", path, err)
+			log.Error(3, "Plugins: Failed to load plugin json file: %v,  err: %v", currentPath, err)
 			scanner.errors = append(scanner.errors, err)
 		}
 	}
 	return nil
 }
 
-func (scanner *PluginScanner) loadPluginJson(path string) error {
-	reader, err := os.Open(path)
+func (scanner *PluginScanner) loadPluginJson(pluginJsonFilePath string) error {
+	currentDir := filepath.Dir(pluginJsonFilePath)
+	reader, err := os.Open(pluginJsonFilePath)
 	if err != nil {
 		return err
 	}
@@ -75,24 +197,44 @@ func (scanner *PluginScanner) loadPluginJson(path string) error {
 	defer reader.Close()
 
 	jsonParser := json.NewDecoder(reader)
-
-	pluginJson := make(map[string]interface{})
-	if err := jsonParser.Decode(&pluginJson); err != nil {
+	pluginCommon := PluginBase{}
+	if err := jsonParser.Decode(&pluginCommon); err != nil {
 		return err
 	}
 
-	pluginType, exists := pluginJson["pluginType"]
+	if pluginCommon.Id == "" || pluginCommon.Type == "" {
+		return errors.New("Did not find type and id property in plugin.json")
+	}
+
+	var loader PluginLoader
+	pluginGoType, exists := PluginTypes[pluginCommon.Type]
 	if !exists {
-		return errors.New("Did not find pluginType property in plugin.json")
+		return errors.New("Unknown plugin type " + pluginCommon.Type)
+	}
+	loader = reflect.New(reflect.TypeOf(pluginGoType)).Interface().(PluginLoader)
+
+	reader.Seek(0, 0)
+	return loader.Load(jsonParser, currentDir)
+}
+
+func GetPluginMarkdown(pluginId string, name string) ([]byte, error) {
+	plug, exists := Plugins[pluginId]
+	if !exists {
+		return nil, PluginNotFoundError{pluginId}
 	}
 
-	if pluginType == "datasource" {
-		datasourceType, exists := pluginJson["type"]
-		if !exists {
-			return errors.New("Did not find type property in plugin.json")
-		}
-		DataSources[datasourceType.(string)] = pluginJson
+	path := filepath.Join(plug.PluginDir, fmt.Sprintf("%s.md", strings.ToUpper(name)))
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		path = filepath.Join(plug.PluginDir, fmt.Sprintf("%s.md", strings.ToLower(name)))
 	}
 
-	return nil
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return make([]byte, 0), nil
+	}
+
+	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
 }

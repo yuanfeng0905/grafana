@@ -4,50 +4,58 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/Unknwon/macaron"
-	"github.com/grafana/grafana/pkg/log"
-	"github.com/grafana/grafana/pkg/metrics"
-	"github.com/grafana/grafana/pkg/middleware"
+	m "github.com/grafana/grafana/pkg/models"
 	"github.com/grafana/grafana/pkg/setting"
+	"gopkg.in/macaron.v1"
 )
 
 var (
-	NotFound    = ApiError(404, "Not found", nil)
-	ServerError = ApiError(500, "Server error", nil)
+	NotFound = func() Response {
+		return Error(404, "Not found", nil)
+	}
+	ServerError = func(err error) Response {
+		return Error(500, "Server error", err)
+	}
 )
 
 type Response interface {
-	WriteTo(out http.ResponseWriter)
+	WriteTo(ctx *m.ReqContext)
 }
 
 type NormalResponse struct {
-	status int
-	body   []byte
-	header http.Header
+	status     int
+	body       []byte
+	header     http.Header
+	errMessage string
+	err        error
 }
 
-func wrap(action interface{}) macaron.Handler {
+func Wrap(action interface{}) macaron.Handler {
 
-	return func(c *middleware.Context) {
+	return func(c *m.ReqContext) {
 		var res Response
 		val, err := c.Invoke(action)
 		if err == nil && val != nil && len(val) > 0 {
 			res = val[0].Interface().(Response)
 		} else {
-			res = ServerError
+			res = ServerError(err)
 		}
 
-		res.WriteTo(c.Resp)
+		res.WriteTo(c)
 	}
 }
 
-func (r *NormalResponse) WriteTo(out http.ResponseWriter) {
-	header := out.Header()
+func (r *NormalResponse) WriteTo(ctx *m.ReqContext) {
+	if r.err != nil {
+		ctx.Logger.Error(r.errMessage, "error", r.err)
+	}
+
+	header := ctx.Resp.Header()
 	for k, v := range r.header {
 		header[k] = v
 	}
-	out.WriteHeader(r.status)
-	out.Write(r.body)
+	ctx.Resp.WriteHeader(r.status)
+	ctx.Resp.Write(r.body)
 }
 
 func (r *NormalResponse) Cache(ttl string) *NormalResponse {
@@ -59,48 +67,55 @@ func (r *NormalResponse) Header(key, value string) *NormalResponse {
 	return r
 }
 
-// functions to create responses
-
+// Empty create an empty response
 func Empty(status int) *NormalResponse {
 	return Respond(status, nil)
 }
 
-func Json(status int, body interface{}) *NormalResponse {
+// JSON create a JSON response
+func JSON(status int, body interface{}) *NormalResponse {
 	return Respond(status, body).Header("Content-Type", "application/json")
 }
 
-func ApiSuccess(message string) *NormalResponse {
+// Success create a successful response
+func Success(message string) *NormalResponse {
 	resp := make(map[string]interface{})
 	resp["message"] = message
-	return Respond(200, resp)
+	return JSON(200, resp)
 }
 
-func ApiError(status int, message string, err error) *NormalResponse {
-	resp := make(map[string]interface{})
-
-	if err != nil {
-		log.Error(4, "%s: %v", message, err)
-		if setting.Env != setting.PROD {
-			resp["error"] = err.Error()
-		}
-	}
+// Error create a erroneous response
+func Error(status int, message string, err error) *NormalResponse {
+	data := make(map[string]interface{})
 
 	switch status {
 	case 404:
-		metrics.M_Api_Status_404.Inc(1)
-		resp["message"] = "Not Found"
+		data["message"] = "Not Found"
 	case 500:
-		metrics.M_Api_Status_500.Inc(1)
-		resp["message"] = "Internal Server Error"
+		data["message"] = "Internal Server Error"
 	}
 
 	if message != "" {
-		resp["message"] = message
+		data["message"] = message
 	}
 
-	return Json(status, resp)
+	if err != nil {
+		if setting.Env != setting.PROD {
+			data["error"] = err.Error()
+		}
+	}
+
+	resp := JSON(status, data)
+
+	if err != nil {
+		resp.errMessage = message
+		resp.err = err
+	}
+
+	return resp
 }
 
+// Respond create a response
 func Respond(status int, body interface{}) *NormalResponse {
 	var b []byte
 	var err error
@@ -111,7 +126,7 @@ func Respond(status int, body interface{}) *NormalResponse {
 		b = []byte(t)
 	default:
 		if b, err = json.Marshal(body); err != nil {
-			return ApiError(500, "body json marshal", err)
+			return Error(500, "body json marshal", err)
 		}
 	}
 	return &NormalResponse{

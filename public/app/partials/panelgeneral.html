@@ -1,61 +1,37 @@
 <div class="editor-row">
-  <div class="section">
-    <h5>General options</h5>
-		<div class="tight-form last">
-			<ul class="tight-form-list">
-				<li class="tight-form-item">
-					Title
-				</li>
-				<li>
-					<input type="text" class="input-xlarge tight-form-input" ng-model='panel.title'></input>
-				</li>
-				<li class="tight-form-item">
-					Span
-				</li>
-				<li>
-					<select class="input-mini tight-form-input" ng-model="panel.span" ng-options="f for f in [0,1,2,3,4,5,6,7,8,9,10,11,12]"></select>
-				</li>
-				<li class="tight-form-item">
-					Height
-				</li>
-				<li>
-					<input type="text" class="input-small tight-form-input" ng-model='panel.height'></input>
-				</li>
-				<li class="tight-form-item">
-					<label class="checkbox-label" for="panel.transparent">Transparent</label>
-					<input class="cr1" id="panel.transparent" type="checkbox" ng-model="panel.transparent" ng-checked="panel.transparent">
-					<label for="panel.transparent" class="cr1"></label>
-				</li>
-			</ul>
-			<div class="clearfix"></div>
+	<div class="section gf-form-group">
+		<h5 class="section-heading">Info</h5>
+		<div class="gf-form">
+			<span class="gf-form-label width-7">Title</span>
+			<input type="text" class="gf-form-input width-25" ng-model='ctrl.panel.title'></input>
 		</div>
-	</div>
-	<div class="section">
-		<h5>Templating options</h5>
-		<div class="tight-form last">
-			<ul class="tight-form-list">
-				<li class="tight-form-item">
-					Repeat Panel
-				</li>
-				<li>
-					<select class="input-small tight-form-input last" ng-model="panel.repeat" ng-options="f.name as f.name for f in dashboard.templating.list">
-						<option value=""></option>
-					</select>
-				</li>
-				<li class="tight-form-item">
-					Min span
-				</li>
-				<li>
-					<select class="input-small tight-form-input last" ng-model="panel.minSpan" ng-options="f for f in [1,2,3,4,5,6,7,8,9,10,11,12]">
-						<option value=""></option>
-					</select>
-				</li>
-			</ul>
-			<div class="clearfix"></div>
+		<div class="gf-form gf-form--v-stretch">
+			<span class="gf-form-label width-7">Description</span>
+			<textarea class="gf-form-input width-25" rows="3" ng-model="ctrl.panel.description"  placeholder="Panel description, supports markdown & links"></textarea>
 		</div>
+    <gf-form-switch class="gf-form" label-class="width-7" switch-class="max-width-6" label="Transparent" checked="ctrl.panel.transparent" on-change="ctrl.render()"></gf-form-switch>
 	</div>
-</div>
 
-<panel-links-editor panel="panel"></panel-links-editor>
+  <div class="section gf-form-group">
+    <h5 class="section-heading">Repeat</h5>
+		<div class="gf-form">
+			<span class="gf-form-label width-9">For each value of</span>
+			<dash-repeat-option panel="ctrl.panel"></dash-repeat-option>
+		</div>
+		<div class="gf-form" ng-show="ctrl.panel.repeat">
+			<span class="gf-form-label width-9">Min width</span>
+			<select class="gf-form-input" ng-model="ctrl.panel.minSpan" ng-options="f for f in [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24]">
+				<option value=""></option>
+			</select>
+		</div>
+    <div class="gf-form" ng-show="ctrl.panel.repeat">
+			<span class="gf-form-label width-9">Direction</span>
+			<select class="gf-form-input" ng-model="ctrl.panel.repeatDirection" ng-options="f.value as f.text for f in [{value: 'v', text: 'Vertical'}, {value: 'h', text: 'Horizontal'}]">
+				<option value=""></option>
+			</select>
+		</div>
+	</div>
+
+	<panel-links-editor panel="ctrl.panel"></panel-links-editor>
 
 

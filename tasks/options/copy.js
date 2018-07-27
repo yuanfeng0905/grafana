@@ -13,6 +13,32 @@ module.exports = function(config) {
       expand: true,
       src: ['**/*', '!**/*.less'],
       dest: '<%= genDir %>'
+    },
+
+    node_modules: {
+      cwd: './node_modules',
+      expand: true,
+      src: [
+        'ace-builds/src-noconflict/**/*',
+        'eventemitter3/*.js',
+        'systemjs/dist/*.js',
+        'es6-promise/**/*',
+        'es6-shim/*.js',
+        'reflect-metadata/*.js',
+        'reflect-metadata/*.ts',
+        'reflect-metadata/*.d.ts',
+        'rxjs/**/*',
+        'tether/**/*',
+        'tether-drop/**/*',
+        'tether-drop/**/*',
+        'remarkable/dist/*',
+        'remarkable/dist/*',
+        'virtual-scroll/**/*',
+        'mousetrap/**/*',
+        'twemoji/2/twemoji.amd*',
+        'twemoji/2/svg/*.svg',
+      ],
+      dest: '<%= srcDir %>/vendor/npm'
     }
 
   };

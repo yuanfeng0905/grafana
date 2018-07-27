@@ -3,12 +3,18 @@ package middleware
 import (
 	"strings"
 
-	"github.com/Unknwon/macaron"
+	m "github.com/grafana/grafana/pkg/models"
 	"github.com/grafana/grafana/pkg/setting"
+	"gopkg.in/macaron.v1"
 )
 
 func ValidateHostHeader(domain string) macaron.Handler {
-	return func(c *macaron.Context) {
+	return func(c *m.ReqContext) {
+		// ignore local render calls
+		if c.IsRenderCall {
+			return
+		}
+
 		h := c.Req.Host
 		if i := strings.Index(h, ":"); i >= 0 {
 			h = h[:i]

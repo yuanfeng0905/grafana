@@ -1,31 +1,43 @@
 {
-    "compilerOptions": {
-        "sourceMap": true,
-        "declaration": true,
-        "outDir": "public_gen/app",
-        "target": "ES5",
-        "rootDir": "public/app",
-        "module": "amd",
-        "noEmitOnError": true
-    },
-    "files": [
-        "public/app/components/panelmeta.ts",
-        "public/app/controllers/signupCtrl.ts",
-        "public/app/core/core.ts",
-        "public/app/core/core_module.ts",
-        "public/app/core/directives/array_join.ts",
-        "public/app/core/directives/give_focus.ts",
-        "public/app/core/filters/filters.ts",
-        "public/app/core/routes/bundle_loader.ts",
-        "public/app/core/utils/datemath.ts",
-        "public/app/features/dashboard/timepicker/timepicker.ts",
-        "public/app/features/dashboard/timepicker/timerange.ts",
-        "public/app/headers/angularjs/angularjs.d.ts",
-        "public/app/headers/common.d.ts",
-        "public/app/headers/jquery/jquery.d.ts",
-        "public/app/headers/lodash/lodash.d.ts",
-        "public/app/headers/moment/moment-node.d.ts",
-        "public/app/headers/moment/moment.d.ts",
-        "public/app/headers/require/require.d.ts"
-    ]
+  "compilerOptions": {
+    "moduleResolution": "node",
+    "outDir": "public/dist",
+    "target": "es5",
+    "lib": [
+      "es6",
+      "dom"
+    ],
+    "rootDir": "public/",
+    "jsx": "react",
+    "module": "esnext",
+    "declaration": false,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "importHelpers": true, // importing helper functions from tslib
+    "noEmitHelpers": true, // disable emitting inline helper functions
+    "removeComments": false, // comments are needed by angular injections
+    "inlineSourceMap": false,
+    "sourceMap": true,
+    "noEmitOnError": false,
+    "emitDecoratorMetadata": false,
+    "experimentalDecorators": true,
+    "noImplicitReturns": true,
+    "noImplicitThis": false,
+    "noImplicitUseStrict": false,
+    "noImplicitAny": false,
+    "noUnusedLocals": true,
+    "baseUrl": "public",
+    "pretty": true,
+    "paths": {
+      "app": [
+        "app"
+      ]
+    }
+  },
+  "include": [
+    "public/app/**/*.ts",
+    "public/app/**/*.tsx",
+    "public/test/**/*.ts"
+  ]
 }

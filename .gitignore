@@ -1,18 +1,25 @@
 node_modules
+npm-debug.log
+yarn-error.log
 coverage/
 .aws-config.json
 awsconfig
+/.awcache
 /dist
+/public/build
+/public/views/index.html
 /emails/dist
 /public_gen
+/public/vendor/npm
 /tmp
-vendor/phantomjs/phantomjs
+tools/phantomjs/phantomjs
+tools/phantomjs/phantomjs.exe
+profile.out
+coverage.txt
 
 docs/AWS_S3_BUCKET
 docs/GIT_BRANCH
-docs/VERSION
 docs/GITCOMMIT
-docs/changed-files
 docs/changed-files
 
 # locally required config files
@@ -23,12 +30,44 @@ public/css/*.min.css
 *.swp
 .idea/
 *.iml
+*.tmp
+.DS_Store
+.vscode/
+.vs/
 
 /data/*
 /bin/*
 
 conf/custom.ini
 fig.yml
+docker-compose.yml
+docker-compose.yaml
+/conf/provisioning/**/custom.yaml
+/conf/provisioning/**/dev.yaml
+/conf/ldap_dev.toml
 profile.cov
-grafana
+/grafana
+/local
 .notouch
+/Makefile.local
+/pkg/cmd/grafana-cli/grafana-cli
+/pkg/cmd/grafana-server/grafana-server
+/pkg/cmd/grafana-server/debug
+/pkg/extensions
+debug.test
+/examples/*/dist
+/packaging/**/*.rpm
+/packaging/**/*.deb
+
+# Ignore OSX indexing
+.DS_Store
+
+/vendor/**/*.py
+/vendor/**/*.xml
+/vendor/**/*.yml
+/vendor/**/*_test.go
+/vendor/**/.editorconfig
+/vendor/**/appengine*
+*.orig
+
+/devenv/dashboards/bulk-testing/*.json

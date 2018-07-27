@@ -5,182 +5,126 @@
 package notifications
 
 import (
+	"bytes"
 	"crypto/tls"
 	"fmt"
+	"html/template"
 	"net"
-	"net/mail"
-	"net/smtp"
-	"os"
-	"strings"
+	"strconv"
 
-	"github.com/grafana/grafana/pkg/log"
+	m "github.com/grafana/grafana/pkg/models"
 	"github.com/grafana/grafana/pkg/setting"
+	gomail "gopkg.in/mail.v2"
 )
 
-var mailQueue chan *Message
+func (ns *NotificationService) send(msg *Message) (int, error) {
+	dialer, err := ns.createDialer()
+	if err != nil {
+		return 0, err
+	}
 
-func initMailQueue() {
-	mailQueue = make(chan *Message, 10)
-	go processMailQueue()
-}
+	for _, address := range msg.To {
+		m := gomail.NewMessage()
+		m.SetHeader("From", msg.From)
+		m.SetHeader("To", address)
+		m.SetHeader("Subject", msg.Subject)
+		for _, file := range msg.EmbededFiles {
+			m.Embed(file)
+		}
 
-func processMailQueue() {
-	for {
-		select {
-		case msg := <-mailQueue:
-			num, err := buildAndSend(msg)
-			tos := strings.Join(msg.To, "; ")
-			info := ""
-			if err != nil {
-				if len(msg.Info) > 0 {
-					info = ", info: " + msg.Info
-				}
-				log.Error(4, fmt.Sprintf("Async sent email %d succeed, not send emails: %s%s err: %s", num, tos, info, err))
-			} else {
-				log.Trace(fmt.Sprintf("Async sent email %d succeed, sent emails: %s%s", num, tos, info))
-			}
+		m.SetBody("text/html", msg.Body)
+
+		if err := dialer.DialAndSend(m); err != nil {
+			return 0, err
 		}
 	}
+
+	return len(msg.To), nil
 }
 
-var addToMailQueue = func(msg *Message) {
-	mailQueue <- msg
-}
+func (ns *NotificationService) createDialer() (*gomail.Dialer, error) {
+	host, port, err := net.SplitHostPort(ns.Cfg.Smtp.Host)
 
-func sendToSmtpServer(recipients []string, msgContent []byte) error {
-	host, port, err := net.SplitHostPort(setting.Smtp.Host)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	iPort, err := strconv.Atoi(port)
+	if err != nil {
+		return nil, err
 	}
 
 	tlsconfig := &tls.Config{
-		InsecureSkipVerify: setting.Smtp.SkipVerify,
+		InsecureSkipVerify: ns.Cfg.Smtp.SkipVerify,
 		ServerName:         host,
 	}
 
-	if setting.Smtp.CertFile != "" {
-		cert, err := tls.LoadX509KeyPair(setting.Smtp.CertFile, setting.Smtp.KeyFile)
+	if ns.Cfg.Smtp.CertFile != "" {
+		cert, err := tls.LoadX509KeyPair(ns.Cfg.Smtp.CertFile, ns.Cfg.Smtp.KeyFile)
 		if err != nil {
-			return err
+			return nil, fmt.Errorf("Could not load cert or key file. error: %v", err)
 		}
 		tlsconfig.Certificates = []tls.Certificate{cert}
 	}
 
-	conn, err := net.Dial("tcp", net.JoinHostPort(host, port))
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
+	d := gomail.NewDialer(host, iPort, ns.Cfg.Smtp.User, ns.Cfg.Smtp.Password)
+	d.TLSConfig = tlsconfig
 
-	isSecureConn := false
-	// Start TLS directly if the port ends with 465 (SMTPS protocol)
-	if strings.HasSuffix(port, "465") {
-		conn = tls.Client(conn, tlsconfig)
-		isSecureConn = true
-	}
-
-	client, err := smtp.NewClient(conn, host)
-	if err != nil {
-		return err
-	}
-
-	hostname, err := os.Hostname()
-	if err != nil {
-		return err
-	}
-
-	if err = client.Hello(hostname); err != nil {
-		return err
-	}
-
-	// If not using SMTPS, alway use STARTTLS if available
-	hasStartTLS, _ := client.Extension("STARTTLS")
-	if !isSecureConn && hasStartTLS {
-		if err = client.StartTLS(tlsconfig); err != nil {
-			return err
-		}
-	}
-
-	canAuth, options := client.Extension("AUTH")
-
-	if canAuth && len(setting.Smtp.User) > 0 {
-		var auth smtp.Auth
-
-		if strings.Contains(options, "CRAM-MD5") {
-			auth = smtp.CRAMMD5Auth(setting.Smtp.User, setting.Smtp.Password)
-		} else if strings.Contains(options, "PLAIN") {
-			auth = smtp.PlainAuth("", setting.Smtp.User, setting.Smtp.Password, host)
-		}
-
-		if auth != nil {
-			if err = client.Auth(auth); err != nil {
-				return err
-			}
-		}
-	}
-
-	if fromAddress, err := mail.ParseAddress(setting.Smtp.FromAddress); err != nil {
-		return err
+	if ns.Cfg.Smtp.EhloIdentity != "" {
+		d.LocalName = ns.Cfg.Smtp.EhloIdentity
 	} else {
-		if err = client.Mail(fromAddress.Address); err != nil {
-			return err
-		}
+		d.LocalName = setting.InstanceName
 	}
-
-	for _, rec := range recipients {
-		if err = client.Rcpt(rec); err != nil {
-			return err
-		}
-	}
-
-	w, err := client.Data()
-	if err != nil {
-		return err
-	}
-	if _, err = w.Write([]byte(msgContent)); err != nil {
-		return err
-	}
-
-	if err = w.Close(); err != nil {
-		return err
-	}
-
-	return client.Quit()
+	return d, nil
 }
 
-func buildAndSend(msg *Message) (int, error) {
-	log.Trace("Sending mails to: %s", strings.Join(msg.To, "; "))
-
-	// get message body
-	content := msg.Content()
-
-	if len(msg.To) == 0 {
-		return 0, fmt.Errorf("empty receive emails")
-	} else if len(msg.Body) == 0 {
-		return 0, fmt.Errorf("empty email body")
+func (ns *NotificationService) buildEmailMessage(cmd *m.SendEmailCommand) (*Message, error) {
+	if !ns.Cfg.Smtp.Enabled {
+		return nil, m.ErrSmtpNotEnabled
 	}
 
-	if msg.Massive {
-		// send mail to multiple emails one by one
-		num := 0
-		for _, to := range msg.To {
-			body := []byte("To: " + to + "\r\n" + content)
-			err := sendToSmtpServer([]string{to}, body)
-			if err != nil {
-				return num, err
-			}
-			num++
-		}
-		return num, nil
-	} else {
-		body := []byte("To: " + strings.Join(msg.To, ";") + "\r\n" + content)
+	var buffer bytes.Buffer
+	var err error
 
-		// send to multiple emails in one message
-		err := sendToSmtpServer(msg.To, body)
+	data := cmd.Data
+	if data == nil {
+		data = make(map[string]interface{}, 10)
+	}
+
+	setDefaultTemplateData(data, nil)
+	err = mailTemplates.ExecuteTemplate(&buffer, cmd.Template, data)
+	if err != nil {
+		return nil, err
+	}
+
+	subject := cmd.Subject
+	if cmd.Subject == "" {
+		var subjectText interface{}
+		subjectData := data["Subject"].(map[string]interface{})
+		subjectText, hasSubject := subjectData["value"]
+
+		if !hasSubject {
+			return nil, fmt.Errorf("Missing subject in Template %s", cmd.Template)
+		}
+
+		subjectTmpl, err := template.New("subject").Parse(subjectText.(string))
 		if err != nil {
-			return 0, err
-		} else {
-			return 1, nil
+			return nil, err
 		}
+
+		var subjectBuffer bytes.Buffer
+		err = subjectTmpl.ExecuteTemplate(&subjectBuffer, "subject", data)
+		if err != nil {
+			return nil, err
+		}
+
+		subject = subjectBuffer.String()
 	}
+
+	return &Message{
+		To:           cmd.To,
+		From:         fmt.Sprintf("%s <%s>", ns.Cfg.Smtp.FromName, ns.Cfg.Smtp.FromAddress),
+		Subject:      subject,
+		Body:         buffer.String(),
+		EmbededFiles: cmd.EmbededFiles,
+	}, nil
 }

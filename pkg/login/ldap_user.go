@@ -1,6 +1,10 @@
 package login
 
-type ldapUserInfo struct {
+import (
+	"strings"
+)
+
+type LdapUserInfo struct {
 	DN        string
 	FirstName string
 	LastName  string
@@ -9,13 +13,13 @@ type ldapUserInfo struct {
 	MemberOf  []string
 }
 
-func (u *ldapUserInfo) isMemberOf(group string) bool {
+func (u *LdapUserInfo) isMemberOf(group string) bool {
 	if group == "*" {
 		return true
 	}
 
 	for _, member := range u.MemberOf {
-		if member == group {
+		if strings.EqualFold(member, group) {
 			return true
 		}
 	}

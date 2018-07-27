@@ -1,19 +1,18 @@
-///<reference path="../../headers/common.d.ts" />
-
-import _ = require('lodash');
-import moment = require('moment');
+import _ from 'lodash';
+import moment from 'moment';
 
 var units = ['y', 'M', 'w', 'd', 'h', 'm', 's'];
-var unitsAsc = _.sortBy(units, function (unit) {
-  return moment.duration(1, unit).valueOf();
-});
 
-var unitsDesc = unitsAsc.reverse();
-
-function parse(text, roundUp?) {
-  if (!text) { return undefined; }
-  if (moment.isMoment(text)) { return text; }
-  if (_.isDate(text)) { return moment(text); }
+export function parse(text, roundUp?, timezone?) {
+  if (!text) {
+    return undefined;
+  }
+  if (moment.isMoment(text)) {
+    return text;
+  }
+  if (_.isDate(text)) {
+    return moment(text);
+  }
 
   var time;
   var mathString = '';
@@ -21,7 +20,11 @@ function parse(text, roundUp?) {
   var parseString;
 
   if (text.substring(0, 3) === 'now') {
-    time = moment();
+    if (timezone === 'utc') {
+      time = moment.utc();
+    } else {
+      time = moment();
+    }
     mathString = text.substring('now'.length);
   } else {
     index = text.indexOf('||');
@@ -33,7 +36,7 @@ function parse(text, roundUp?) {
       mathString = text.substring(index + 2);
     }
     // We're going to just require ISO8601 timestamps, k?
-    time = moment(parseString);
+    time = moment(parseString, moment.ISO_8601);
   }
 
   if (!mathString.length) {
@@ -43,7 +46,7 @@ function parse(text, roundUp?) {
   return parseDateMath(mathString, time, roundUp);
 }
 
-function isValid(text) {
+export function isValid(text) {
   var date = parse(text);
   if (!date) {
     return false;
@@ -56,7 +59,7 @@ function isValid(text) {
   return false;
 }
 
-function parseDateMath(mathString, time, roundUp?) {
+export function parseDateMath(mathString, time, roundUp?) {
   var dateTime = time;
   var i = 0;
   var len = mathString.length;
@@ -85,7 +88,9 @@ function parseDateMath(mathString, time, roundUp?) {
       var numFrom = i;
       while (!isNaN(mathString.charAt(i))) {
         i++;
-        if (i > 10) { return undefined; }
+        if (i > 10) {
+          return undefined;
+        }
       }
       num = parseInt(mathString.substring(numFrom, i), 10);
     }
@@ -98,14 +103,13 @@ function parseDateMath(mathString, time, roundUp?) {
     }
     unit = mathString.charAt(i++);
 
-    if (!_.contains(units, unit)) {
+    if (!_.includes(units, unit)) {
       return undefined;
     } else {
       if (type === 0) {
         if (roundUp) {
           dateTime.endOf(unit);
-        }
-        else {
+        } else {
           dateTime.startOf(unit);
         }
       } else if (type === 1) {
@@ -117,9 +121,3 @@ function parseDateMath(mathString, time, roundUp?) {
   }
   return dateTime;
 }
-
-export = {
-  parse: parse,
-  parseDateMath: parseDateMath,
-  isValid: isValid
-};

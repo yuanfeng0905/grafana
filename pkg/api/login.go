@@ -8,29 +8,39 @@ import (
 	"github.com/grafana/grafana/pkg/log"
 	"github.com/grafana/grafana/pkg/login"
 	"github.com/grafana/grafana/pkg/metrics"
-	"github.com/grafana/grafana/pkg/middleware"
 	m "github.com/grafana/grafana/pkg/models"
+	"github.com/grafana/grafana/pkg/services/session"
 	"github.com/grafana/grafana/pkg/setting"
-	"github.com/grafana/grafana/pkg/util"
 )
 
 const (
-	VIEW_INDEX = "index"
+	ViewIndex = "index"
 )
 
-func LoginView(c *middleware.Context) {
-	if err := setIndexViewData(c); err != nil {
+func LoginView(c *m.ReqContext) {
+	viewData, err := setIndexViewData(c)
+	if err != nil {
 		c.Handle(500, "Failed to get settings", err)
 		return
 	}
 
-	settings := c.Data["Settings"].(map[string]interface{})
-	settings["googleAuthEnabled"] = setting.OAuthService.Google
-	settings["githubAuthEnabled"] = setting.OAuthService.GitHub
-	settings["disableUserSignUp"] = !setting.AllowUserSignUp
+	enabledOAuths := make(map[string]interface{})
+	for key, oauth := range setting.OAuthService.OAuthInfos {
+		enabledOAuths[key] = map[string]string{"name": oauth.Name}
+	}
+
+	viewData.Settings["oauth"] = enabledOAuths
+	viewData.Settings["disableUserSignUp"] = !setting.AllowUserSignUp
+	viewData.Settings["loginHint"] = setting.LoginHint
+	viewData.Settings["disableLoginForm"] = setting.DisableLoginForm
+
+	if loginError, ok := c.Session.Get("loginError").(string); ok {
+		c.Session.Delete("loginError")
+		viewData.Settings["loginError"] = loginError
+	}
 
 	if !tryLoginUsingRememberCookie(c) {
-		c.HTML(200, VIEW_INDEX)
+		c.HTML(200, ViewIndex, viewData)
 		return
 	}
 
@@ -43,7 +53,7 @@ func LoginView(c *middleware.Context) {
 	c.Redirect(setting.AppSubUrl + "/")
 }
 
-func tryLoginUsingRememberCookie(c *middleware.Context) bool {
+func tryLoginUsingRememberCookie(c *m.ReqContext) bool {
 	// Check auto-login.
 	uname := c.GetCookie(setting.CookieUserName)
 	if len(uname) == 0 {
@@ -68,8 +78,7 @@ func tryLoginUsingRememberCookie(c *middleware.Context) bool {
 	user := userQuery.Result
 
 	// validate remember me cookie
-	if val, _ := c.GetSuperSecureCookie(
-		util.EncodeMd5(user.Rands+user.Password), setting.CookieRememberName); val != user.Login {
+	if val, _ := c.GetSuperSecureCookie(user.Rands+user.Password, setting.CookieRememberName); val != user.Login {
 		return false
 	}
 
@@ -78,7 +87,7 @@ func tryLoginUsingRememberCookie(c *middleware.Context) bool {
 	return true
 }
 
-func LoginApiPing(c *middleware.Context) {
+func LoginAPIPing(c *m.ReqContext) {
 	if !tryLoginUsingRememberCookie(c) {
 		c.JsonApiErr(401, "Unauthorized", nil)
 		return
@@ -87,18 +96,24 @@ func LoginApiPing(c *middleware.Context) {
 	c.JsonOK("Logged in")
 }
 
-func LoginPost(c *middleware.Context, cmd dtos.LoginCommand) Response {
-	authQuery := login.LoginUserQuery{
-		Username: cmd.User,
-		Password: cmd.Password,
+func LoginPost(c *m.ReqContext, cmd dtos.LoginCommand) Response {
+	if setting.DisableLoginForm {
+		return Error(401, "Login is disabled", nil)
 	}
 
-	if err := bus.Dispatch(&authQuery); err != nil {
-		if err == login.ErrInvalidCredentials {
-			return ApiError(401, "Invalid username or password", err)
+	authQuery := &m.LoginUserQuery{
+		ReqContext: c,
+		Username:   cmd.User,
+		Password:   cmd.Password,
+		IpAddress:  c.Req.RemoteAddr,
+	}
+
+	if err := bus.Dispatch(authQuery); err != nil {
+		if err == login.ErrInvalidCredentials || err == login.ErrTooManyLoginAttempts {
+			return Error(401, "Invalid username or password", err)
 		}
 
-		return ApiError(500, "Error while trying to authenticate user", err)
+		return Error(500, "Error while trying to authenticate user", err)
 	}
 
 	user := authQuery.User
@@ -114,26 +129,35 @@ func LoginPost(c *middleware.Context, cmd dtos.LoginCommand) Response {
 		c.SetCookie("redirect_to", "", -1, setting.AppSubUrl+"/")
 	}
 
-	metrics.M_Api_Login_Post.Inc(1)
+	metrics.M_Api_Login_Post.Inc()
 
-	return Json(200, result)
+	return JSON(200, result)
 }
 
-func loginUserWithUser(user *m.User, c *middleware.Context) {
+func loginUserWithUser(user *m.User, c *m.ReqContext) {
 	if user == nil {
 		log.Error(3, "User login with nil user")
 	}
 
-	days := 86400 * setting.LogInRememberDays
-	c.SetCookie(setting.CookieUserName, user.Login, days, setting.AppSubUrl+"/")
-	c.SetSuperSecureCookie(util.EncodeMd5(user.Rands+user.Password), setting.CookieRememberName, user.Login, days, setting.AppSubUrl+"/")
+	c.Resp.Header().Del("Set-Cookie")
 
-	c.Session.Set(middleware.SESS_KEY_USERID, user.Id)
+	days := 86400 * setting.LogInRememberDays
+	if days > 0 {
+		c.SetCookie(setting.CookieUserName, user.Login, days, setting.AppSubUrl+"/")
+		c.SetSuperSecureCookie(user.Rands+user.Password, setting.CookieRememberName, user.Login, days, setting.AppSubUrl+"/")
+	}
+
+	c.Session.RegenerateId(c.Context)
+	c.Session.Set(session.SESS_KEY_USERID, user.Id)
 }
 
-func Logout(c *middleware.Context) {
+func Logout(c *m.ReqContext) {
 	c.SetCookie(setting.CookieUserName, "", -1, setting.AppSubUrl+"/")
 	c.SetCookie(setting.CookieRememberName, "", -1, setting.AppSubUrl+"/")
-	c.Session.Destory(c)
-	c.Redirect(setting.AppSubUrl + "/login")
+	c.Session.Destory(c.Context)
+	if setting.SignoutRedirectUrl != "" {
+		c.Redirect(setting.SignoutRedirectUrl)
+	} else {
+		c.Redirect(setting.AppSubUrl + "/login")
+	}
 }

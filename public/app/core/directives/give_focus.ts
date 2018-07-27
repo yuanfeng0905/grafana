@@ -1,7 +1,4 @@
-///<reference path="../../headers/common.d.ts" />
-
-import angular = require('angular');
-import coreModule = require('../core_module');
+import coreModule from '../core_module';
 
 coreModule.directive('giveFocus', function() {
   return function(scope, element, attrs) {
@@ -9,19 +6,23 @@ coreModule.directive('giveFocus', function() {
       e.stopPropagation();
     });
 
-    scope.$watch(attrs.giveFocus, function (newValue) {
-      if (!newValue) {
-        return;
-      }
-      setTimeout(function() {
-        element.focus();
-        var domEl = element[0];
-        if (domEl.setSelectionRange) {
-          var pos = element.val().length * 2;
-          domEl.setSelectionRange(pos, pos);
+    scope.$watch(
+      attrs.giveFocus,
+      function(newValue) {
+        if (!newValue) {
+          return;
         }
-      }, 200);
-    }, true);
+        setTimeout(function() {
+          element.focus();
+          var domEl = element[0];
+          if (domEl.setSelectionRange) {
+            var pos = element.val().length * 2;
+            domEl.setSelectionRange(pos, pos);
+          }
+        }, 200);
+      },
+      true
+    );
   };
 });
 

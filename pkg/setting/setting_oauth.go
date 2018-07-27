@@ -6,13 +6,18 @@ type OAuthInfo struct {
 	AuthUrl, TokenUrl      string
 	Enabled                bool
 	AllowedDomains         []string
+	HostedDomain           string
 	ApiUrl                 string
 	AllowSignup            bool
+	Name                   string
+	TlsClientCert          string
+	TlsClientKey           string
+	TlsClientCa            string
+	TlsSkipVerify          bool
 }
 
 type OAuther struct {
-	GitHub, Google, Twitter bool
-	OAuthInfos              map[string]*OAuthInfo
+	OAuthInfos map[string]*OAuthInfo
 }
 
 var OAuthService *OAuther

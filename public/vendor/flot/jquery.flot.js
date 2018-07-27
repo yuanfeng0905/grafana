@@ -248,7 +248,7 @@ Licensed under the MIT license.
 			// Create the text layer container, if it doesn't exist
 
 			if (this.textContainer == null) {
-				this.textContainer = $("<div class='flot-text'></div>")
+				this.textContainer = $("<div class='flot-text flot-temp-elem'></div>")
 					.css({
 						position: "absolute",
 						top: 0,
@@ -602,6 +602,7 @@ Licensed under the MIT license.
                     tickColor: null, // color for the ticks, e.g. "rgba(0,0,0,0.15)"
                     margin: 0, // distance from the canvas edge to the grid
                     labelMargin: 5, // in pixels
+                    eventSectionHeight: 0, // space for event section
                     axisMargin: 8, // in pixels
                     borderWidth: 2, // in pixels
                     minBorderMargin: null, // in pixels, null means taken from points radius
@@ -631,6 +632,7 @@ Licensed under the MIT license.
             processRawData: [],
             processDatapoints: [],
             processOffset: [],
+            processRange: [],
             drawBackground: [],
             drawSeries: [],
             draw: [],
@@ -1201,24 +1203,21 @@ Licensed under the MIT license.
                             points[k + m] = null;
                         }
                     }
-                    else {
-                        // a little bit of line specific stuff that
-                        // perhaps shouldn't be here, but lacking
-                        // better means...
-                        if (insertSteps && k > 0
-                            && points[k - ps] != null
-                            && points[k - ps] != points[k]
-                            && points[k - ps + 1] != points[k + 1]) {
-                            // copy the point to make room for a middle point
-                            for (m = 0; m < ps; ++m)
-                                points[k + ps + m] = points[k + m];
 
-                            // middle point has same y
-                            points[k + 1] = points[k - ps + 1];
+                    if (insertSteps && k > 0 && (!nullify || points[k - ps] != null)) {
+                        // copy the point to make room for a middle point
+                        for (m = 0; m < ps; ++m)
+                            points[k + ps + m] = points[k + m];
 
-                            // we've added a point, better reflect that
-                            k += ps;
-                        }
+                        // middle point has same y
+                        points[k + 1] = points[k - ps + 1] || 0;
+
+                        // if series has null values, let's give the last !null value a nice step
+                        if(nullify)
+                        	points[k] = p[0];
+
+                        // we've added a point, better reflect that
+                        k += ps;
                     }
                 }
             }
@@ -1316,14 +1315,10 @@ Licensed under the MIT license.
         }
 
         function setupCanvases() {
-
             // Make sure the placeholder is clear of everything except canvases
             // from a previous plot in this container that we'll try to re-use.
 
-            placeholder.css("padding", 0) // padding messes up the positioning
-                .children().filter(function(){
-                    return !$(this).hasClass("flot-overlay") && !$(this).hasClass('flot-base');
-                }).remove();
+            placeholder.find(".flot-temp-elem").remove();
 
             if (placeholder.css("position") == 'static')
                 placeholder.css("position", "relative"); // for positioning labels and overlay
@@ -1457,6 +1452,7 @@ Licensed under the MIT license.
                 tickLength = axis.options.tickLength,
                 axisMargin = options.grid.axisMargin,
                 padding = options.grid.labelMargin,
+                eventSectionPadding = options.grid.eventSectionHeight,
                 innermost = true,
                 outermost = true,
                 first = true,
@@ -1497,7 +1493,9 @@ Licensed under the MIT license.
                 padding += +tickLength;
 
             if (isXAxis) {
+                // Add space for event section
                 lh += padding;
+                lh += eventSectionPadding;
 
                 if (pos == "bottom") {
                     plotOffset.bottom += lh + axisMargin;
@@ -1525,6 +1523,7 @@ Licensed under the MIT license.
             axis.position = pos;
             axis.tickLength = tickLength;
             axis.box.padding = padding;
+            axis.box.eventSectionPadding = eventSectionPadding;
             axis.innermost = innermost;
         }
 
@@ -1615,20 +1614,32 @@ Licensed under the MIT license.
                 setRange(axis);
             });
 
+            executeHooks(hooks.processRange, []);
+
             if (showGrid) {
 
                 var allocatedAxes = $.grep(axes, function (axis) {
                     return axis.show || axis.reserveSpace;
                 });
 
-                $.each(allocatedAxes, function (_, axis) {
-                    // make the ticks
-                    setupTickGeneration(axis);
-                    setTicks(axis);
-                    snapRangeToTicks(axis, axis.ticks);
-                    // find labelWidth/Height for axis
-                    measureTickLabels(axis);
-                });
+                var snaped = false;
+                for (var i = 0; i < 2; i++) {
+                    $.each(allocatedAxes, function (_, axis) {
+                        // make the ticks
+                        setupTickGeneration(axis);
+                        setTicks(axis);
+                        snaped = snapRangeToTicks(axis, axis.ticks) || snaped;
+                        // find labelWidth/Height for axis
+                        measureTickLabels(axis);
+                    });
+
+                    if (snaped && hooks.processRange.length > 0) {
+                        executeHooks(hooks.processRange, []);
+                        snaped = false;
+                    } else {
+                        break;
+                    }
+                }
 
                 // with all dimensions calculated, we can compute the
                 // axis bounding boxes, start from the outside
@@ -1644,6 +1655,7 @@ Licensed under the MIT license.
                     allocateAxisBoxSecondPhase(axis);
                 });
             }
+
 
             plotWidth = surface.width - plotOffset.left - plotOffset.right;
             plotHeight = surface.height - plotOffset.bottom - plotOffset.top;
@@ -1667,15 +1679,19 @@ Licensed under the MIT license.
                 delta = max - min;
 
             if (delta == 0.0) {
-                // degenerate case
-                var widen = max == 0 ? 1 : 0.01;
+                // Grafana fix: wide Y min and max using increased wideFactor
+                // when all series values are the same
+                var wideFactor = 0.25;
+                var widen = Math.abs(max == 0 ? 1 : max * wideFactor);
 
-                if (opts.min == null)
-                    min -= widen;
+                if (opts.min == null) {
+                  min -= widen;
+                }
                 // always widen max if we couldn't widen min to ensure we
                 // don't fall into min == max which doesn't work
-                if (opts.max == null || opts.min != null)
-                    max += widen;
+                if (opts.max == null || opts.min != null) {
+                  max += widen;
+                }
             }
             else {
                 // consider autoscaling
@@ -1874,13 +1890,19 @@ Licensed under the MIT license.
         }
 
         function snapRangeToTicks(axis, ticks) {
+            var changed = false;
             if (axis.options.autoscaleMargin && ticks.length > 0) {
                 // snap to ticks
-                if (axis.options.min == null)
+                if (axis.options.min == null) {
                     axis.min = Math.min(axis.min, ticks[0].v);
-                if (axis.options.max == null && ticks.length > 1)
+                    changed = true;
+                }
+                if (axis.options.max == null && ticks.length > 1) {
                     axis.max = Math.max(axis.max, ticks[ticks.length - 1].v);
+                    changed = true;
+                }
             }
+            return changed;
         }
 
         function draw() {
@@ -2228,7 +2250,7 @@ Licensed under the MIT license.
                         halign = "center";
                         x = plotOffset.left + axis.p2c(tick.v);
                         if (axis.position == "bottom") {
-                            y = box.top + box.padding;
+                            y = box.top + box.padding + box.eventSectionPadding;
                         } else {
                             y = box.top + box.height - box.padding;
                             valign = "bottom";
@@ -2960,8 +2982,11 @@ Licensed under the MIT license.
         }
 
         function onClick(e) {
-            triggerClickHoverEvent("plotclick", e,
-                                   function (s) { return s["clickable"] != false; });
+          if (plot.isSelecting) {
+            return;
+          }
+
+          triggerClickHoverEvent("plotclick", e, function (s) { return s["clickable"] != false; });
         }
 
         // trigger click or hover event (they send the same parameters
@@ -2974,6 +2999,10 @@ Licensed under the MIT license.
 
             pos.pageX = event.pageX;
             pos.pageY = event.pageY;
+
+            // Add ctrlKey and metaKey to event
+            pos.ctrlKey = event.ctrlKey;
+            pos.metaKey = event.metaKey;
 
             var item = findNearbyItem(canvasX, canvasY, seriesFilter);
 

@@ -2,6 +2,8 @@ package sqlstore
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/grafana/grafana/pkg/bus"
 	m "github.com/grafana/grafana/pkg/models"
 	"github.com/grafana/grafana/pkg/setting"
@@ -29,7 +31,7 @@ func GetOrgQuotaByTarget(query *m.GetOrgQuotaByTargetQuery) error {
 	has, err := x.Get(&quota)
 	if err != nil {
 		return err
-	} else if has == false {
+	} else if !has {
 		quota.Limit = query.Default
 	}
 
@@ -94,18 +96,20 @@ func GetOrgQuotas(query *m.GetOrgQuotasQuery) error {
 }
 
 func UpdateOrgQuota(cmd *m.UpdateOrgQuotaCmd) error {
-	return inTransaction2(func(sess *session) error {
+	return inTransaction(func(sess *DBSession) error {
 		//Check if quota is already defined in the DB
 		quota := m.Quota{
-			Target: cmd.Target,
-			OrgId:  cmd.OrgId,
+			Target:  cmd.Target,
+			OrgId:   cmd.OrgId,
+			Updated: time.Now(),
 		}
 		has, err := sess.Get(&quota)
 		if err != nil {
 			return err
 		}
 		quota.Limit = cmd.Limit
-		if has == false {
+		if !has {
+			quota.Created = time.Now()
 			//No quota in the DB for this target, so create a new one.
 			if _, err := sess.Insert(&quota); err != nil {
 				return err
@@ -129,7 +133,7 @@ func GetUserQuotaByTarget(query *m.GetUserQuotaByTargetQuery) error {
 	has, err := x.Get(&quota)
 	if err != nil {
 		return err
-	} else if has == false {
+	} else if !has {
 		quota.Limit = query.Default
 	}
 
@@ -194,18 +198,20 @@ func GetUserQuotas(query *m.GetUserQuotasQuery) error {
 }
 
 func UpdateUserQuota(cmd *m.UpdateUserQuotaCmd) error {
-	return inTransaction2(func(sess *session) error {
+	return inTransaction(func(sess *DBSession) error {
 		//Check if quota is already defined in the DB
 		quota := m.Quota{
-			Target: cmd.Target,
-			UserId: cmd.UserId,
+			Target:  cmd.Target,
+			UserId:  cmd.UserId,
+			Updated: time.Now(),
 		}
 		has, err := sess.Get(&quota)
 		if err != nil {
 			return err
 		}
 		quota.Limit = cmd.Limit
-		if has == false {
+		if !has {
+			quota.Created = time.Now()
 			//No quota in the DB for this target, so create a new one.
 			if _, err := sess.Insert(&quota); err != nil {
 				return err
